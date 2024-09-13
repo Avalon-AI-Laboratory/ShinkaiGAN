@@ -9,7 +9,7 @@ class VectorQuantizer(nn.Module):
         self.beta = beta
 
         self.embedding = nn.Embedding(self.n_e, self.e_dim)
-        self.embedding.weight.data.uniform(-1.0 / self.n_e, 1.0 / self.n_e)
+        nn.init.uniform_(self.embedding.weight.data, -1.0 / self.n_e, 1.0 / self.n_e)
 
     def forward(self, z):
         z = z.permute(0, 2, 3, 1).contiguous()
