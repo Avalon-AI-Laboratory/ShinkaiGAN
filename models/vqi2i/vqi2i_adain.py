@@ -5,33 +5,83 @@ from torch.autograd import Variable
 
 from models.vqi2i.modules.encoders.network import *
 from models.vqi2i.modules.vqvae.quantize import VectorQuantizer
-from models.vqi2i.modules.discriminators.model import NLayerDiscriminator
-from models.vqi2i.modules.losses.vqperceptual import hinge_d_loss
+# from models.vqi2i.modules.discriminators.model import NLayerDiscriminator
+# from models.vqi2i.modules.losses.vqperceptual import hinge_d_loss
 
 class VQI2I_AdaIN(nn.Module):
     def __init__(self,
-                #  ddconfig,
-                #  lossconfig,
-                 n_embed,
-                 embed_dim,
-                #  ckpt_path=None,
-                #  ignore_keys=[],
-                 image_key="image",
-                #  colorize_nlabels=None,
-                #  monitor=None
+                 in_channels : int = 3,
+                 intermediate_channels : int = 128,
+                 out_channels : int = 3,
+                 style_dim : int = 128,
+                 z_channels : int = 128,
+                 double_z : bool = True,
+                 n_embed : int = 512,
+                 embed_dim : int = 512,
+                 channel_multipliers : list = [1,1,2,4,8],
+                 resblock_counts : int = 2,
+                 attn_resolutions : list = [16],
+                 dropout : float = 0.1,
+                 resolution : int = 256,
+                 n_adaresblock : int = 4,
+                 ckpt_path : str = None,
+                 ignore_keys : list = [],
+                 image_key : str = "image",
+                 colorize_nlabels=None,
+                 monitor=None
                 ):
         
         super(VQI2I_AdaIN, self).__init__()
         self.image_key = image_key
-        self.style_enc_a = StyleEncoder(in_channels=3, hidden_dimensions=128, style_dimensions=128, n_downsampling=3)
-        self.style_enc_b = StyleEncoder(in_channels=3, hidden_dimensions=128, style_dimensions=128, n_downsampling=3)
-        self.content_enc = ContentEncoder(in_channels=3, intermediate_channels=128, channel_multipliers=[1,1,2,4,8], resblock_counts=2, attn_resolutions=[16], dropout=0.1, resolution=256,z_channels=32, double_z=True)
-        self.quantize = VectorQuantizer(n_e=n_embed, e_dim=embed_dim, beta=0.25)
-        self.quant_conv = nn.Conv2d(256, embed_dim, kernel_size=1, stride=1)
-        self.post_quant_conv = nn.Conv2d(embed_dim, 256, kernel_size=1, stride=1)
 
-        self.decoder_a = Decoder(out_channels=3, intermediate_channels=128, channel_multipliers=[1,1,2,4,8], resblock_counts=2, attn_resolutions=[16], dropout=0.1, resolution=256,z_channels=32, n_adaresblock=4, style_dim=128, double_z=True)
-        self.decoder_b = Decoder(out_channels=3, intermediate_channels=128, channel_multipliers=[1,1,2,4,8], resblock_counts=2, attn_resolutions=[16], dropout=0.1, resolution=256,z_channels=32, n_adaresblock=4, style_dim=128, double_z=True)
+        self.style_enc_a = StyleEncoder(in_channels=in_channels, 
+                                        hidden_dimensions=intermediate_channels, 
+                                        style_dimensions=style_dim, 
+                                        n_downsampling=3)
+        
+        self.style_enc_b = StyleEncoder(in_channels=in_channels, 
+                                        hidden_dimensions=intermediate_channels, 
+                                        style_dimensions=style_dim, 
+                                        n_downsampling=3)
+        
+        self.content_enc = ContentEncoder(in_channels=in_channels, 
+                                          intermediate_channels=intermediate_channels, 
+                                          channel_multipliers=channel_multipliers, 
+                                          resblock_counts=resblock_counts, 
+                                          attn_resolutions=attn_resolutions, 
+                                          dropout=dropout, 
+                                          resolution=resolution,
+                                          z_channels=z_channels, 
+                                          double_z=double_z)
+        
+        self.quantize = VectorQuantizer(n_e=n_embed, e_dim=embed_dim, beta=0.25)
+
+        self.quant_conv = nn.Conv2d(z_channels * 2 if double_z else z_channels, embed_dim, kernel_size=1, stride=1)
+        self.post_quant_conv = nn.Conv2d(embed_dim, z_channels * 2 if double_z else z_channels, kernel_size=1, stride=1)
+
+        self.decoder_a = Decoder(out_channels=out_channels, 
+                                 intermediate_channels=intermediate_channels, 
+                                 channel_multipliers=channel_multipliers, 
+                                 resblock_counts=resblock_counts, 
+                                 attn_resolutions=attn_resolutions, 
+                                 dropout=dropout, 
+                                 resolution=resolution,
+                                 z_channels=z_channels, 
+                                 n_adaresblock=n_adaresblock, 
+                                 style_dim=style_dim, 
+                                 double_z=double_z)
+        
+        self.decoder_b = Decoder(out_channels=out_channels, 
+                                 intermediate_channels=intermediate_channels, 
+                                 channel_multipliers=channel_multipliers, 
+                                 resblock_counts=resblock_counts, 
+                                 attn_resolutions=attn_resolutions, 
+                                 dropout=dropout, 
+                                 resolution=resolution,
+                                 z_channels=z_channels, 
+                                 n_adaresblock=n_adaresblock, 
+                                 style_dim=style_dim, 
+                                 double_z=double_z)
 
     def encode(self, x, label):
         c = self.content_enc(x)
@@ -89,8 +139,6 @@ class VQI2I_AdaIN(nn.Module):
 
 class VQI2ICrossGAN_AdaIN(VQI2I_AdaIN):
     def __init__(self,
-                 ddconfig,
-                 lossconfig,
                  n_embed,
                  embed_dim,
                  ckpt_path=None,
@@ -100,7 +148,7 @@ class VQI2ICrossGAN_AdaIN(VQI2I_AdaIN):
                  monitor=None):
         
         super(VQI2ICrossGAN_AdaIN, self).__init__(
-            ddconfig, lossconfig, n_embed, embed_dim
+            n_embed, embed_dim
         )
     
     def forward(self, x, label, cross=False, s_given=False):
