@@ -148,7 +148,7 @@ class VQI2ICrossGAN_AdaIN(VQI2I_AdaIN):
                  monitor=None):
         
         super(VQI2ICrossGAN_AdaIN, self).__init__(
-            n_embed, embed_dim
+            n_embed=n_embed, embed_dim=embed_dim
         )
     
     def forward(self, x, label, cross=False, s_given=False):
