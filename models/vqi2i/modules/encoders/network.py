@@ -122,12 +122,12 @@ class StyleEncoder(nn.Module):
 class LinearAttentionBlock(nn.Module):
     def __init__(self, in_channels):
         super(LinearAttentionBlock, self).__init__()
-        self.norm = Normalize(in_channels)
+        self.norm = nn.BatchNorm2d(in_channels)  # Using batch normalization for simplicity
         self.Q = nn.Conv2d(in_channels, in_channels, kernel_size=1, padding=0, stride=1)
         self.K = nn.Conv2d(in_channels, in_channels, kernel_size=1, padding=0, stride=1)
         self.V = nn.Conv2d(in_channels, in_channels, kernel_size=1, padding=0, stride=1)
         self.out = nn.Conv2d(in_channels, in_channels, kernel_size=1, padding=0, stride=1)
-    
+
     def forward(self, x):
         x = self.norm(x)
         
@@ -136,18 +136,15 @@ class LinearAttentionBlock(nn.Module):
         V = self.V(x)
         
         b, c, h, w = Q.shape
+        Q = Q.view(b, c, -1)  # b x c x (h*w)
+        K = K.view(b, c, -1)  # b x c x (h*w)
+        V = V.view(b, c, -1)  # b x c x (h*w)
         
-        Q = Q.view(b, c, -1)
-        K = K.view(b, c, -1)
-        V = V.view(b, c, -1)
-        
-        Q = F.softmax(Q, dim=-1)
         K = F.softmax(K, dim=-1)
+
+        attention = torch.bmm(Q, K.transpose(1, 2)) / (c ** 0.5)  # b x (h*w) x (h*w)
         
-        attention = torch.bmm(Q, K.transpose(1, 2))
-        attention = attention / (c ** 0.5)
-        
-        out = torch.bmm(attention, V)
+        out = torch.bmm(attention, V)  # b x (h*w) x (h*w)
         out = out.view(b, c, h, w)
         out = self.out(out)
         
@@ -274,12 +271,12 @@ class Decoder(nn.Module):
 
         block_in = intermediate_channels * channel_multipliers[self.num_resolutions - 1]
         current_resolution = resolution // (2 ** (self.num_resolutions - 1))
-        self.z_shape = (1, z_channels, current_resolution, current_resolution*2) # Ini keknya perlu diperbaiki, ukurannya seharusnya (1, z_channels, current_resolution(dimensi mel), downsampled_timestep (gonna do something about this))
+        self.z_shape = (1, z_channels, current_resolution, current_resolution) # Ini keknya perlu diperbaiki, ukurannya seharusnya (1, z_channels, current_resolution(dimensi mel), downsampled_timestep (gonna do something about this))
         print("Melakukan operasi pada z dengan dimensi {} = {} dimensi.".format(
               self.z_shape, np.prod(self.z_shape)))
 
         # z masuk ke dalam decoder, mulai dari conv_in
-        self.conv_in = nn.Conv2d(in_channels=z_channels, out_channels=block_in, kernel_size=3, padding=1, stride=1)
+        self.conv_in = nn.Conv2d(in_channels = 2 * z_channels if double_z else z_channels, out_channels=block_in, kernel_size=3, padding=1, stride=1)
 
         self.adaresblocks = nn.ModuleList()
 
