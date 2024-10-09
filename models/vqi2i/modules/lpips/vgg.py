@@ -9,7 +9,7 @@ class VGG19(nn.Module):
         self.init_weights = init_weights
         self.feature_mode = feature_mode
         self.batch_norm = batch_norm
-        self.num_clases = num_classes
+        self.num_classes = num_classes
         self.features = self.make_layers(self.cfg, batch_norm)
         self.classifier = nn.Sequential(
             nn.Linear(512 * 7 * 7, 4096),
@@ -28,7 +28,6 @@ class VGG19(nn.Module):
             else:
                 state_dict = torch.load(init_weights)
             self.load_state_dict(state_dict)
-    
 
     def make_layers(self, cfg, batch_norm=False):
         layers = []
@@ -45,13 +44,26 @@ class VGG19(nn.Module):
                 in_channels = v
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, layers_to_save=None):
+        outputs = {}  # Dictionary to store outputs of specified layers
         if self.feature_mode:
             module_list = list(self.features.modules())
-            for l in module_list[1:27]: # conv4_4
+            for idx, l in enumerate(module_list[1:27]):  # conv4_4
                 x = l(x)
+                if layers_to_save and idx in layers_to_save:
+                    outputs[f'layer_{idx}'] = x  # Save the output of the specified layer
         if not self.feature_mode:
+            for idx, l in enumerate(self.features):
+                x = l(x)
+                if layers_to_save and idx in layers_to_save:
+                    outputs[f'layer_{idx}'] = x  # Save the output of the specified layer
             x = x.view(x.size(0), -1)
-            x = self.classifier(x)
+            for idx, l in enumerate(self.classifier):
+                x = l(x)
+                classifier_idx = idx + len(self.features)  # Continue layer indexing
+                if layers_to_save and classifier_idx in layers_to_save:
+                    outputs[f'layer_{classifier_idx}'] = x  # Save the output of the classifier layer
 
-        return x
+        if layers_to_save:
+            return outputs, x  # Return both the intermediate outputs and final result
+        return x  # Only return the final output if no layers are specified
