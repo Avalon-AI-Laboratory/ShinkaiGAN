@@ -45,3 +45,42 @@ class PatchNCELoss(nn.Module):
         loss = self.ce_loss(out, torch.zeros(out.size(0), dtype=torch.long, device=feat_q.device))
 
         return loss
+
+
+def calculate_NCE_loss(src:torch.Tensor, 
+                       tgt:torch.Tensor, 
+                       nce_layers:list, 
+                       netG:nn.Module, 
+                       netF_s:nn.Module, 
+                       criterionNCE:list, 
+                       n_patch:int = 256, 
+                       nce_includes_all_negatives_from_minibatch:bool = False,
+                       nce_temp:float = 0.07,
+                       lambda_NCE_s:float = 0.1, 
+                       flip_equivariance:bool = False, 
+                       flipped_for_equivariance:bool = False):
+    """
+    The code borrows heavily from the PyTorch implementation of CUT
+    https://github.com/taesungp/contrastive-unpaired-translation
+    """
+    n_layers = len(nce_layers)
+    criterionNCE = []
+
+    for i, nce_layer in enumerate(nce_layers):
+        criterionNCE.append(PatchNCELoss(nce_includes_all_negatives_from_minibatch, n_patch, nce_temp).cuda())
+
+    feat_q = netG(tgt, nce_layers, encode_only=True)
+
+    if flip_equivariance and flipped_for_equivariance:
+        feat_q = [torch.flip(fq, [3]) for fq in feat_q]
+
+    feat_k = netG(src, nce_layers, encode_only=True)
+    feat_k_pool, sample_ids = netF_s(feat_k, n_patch, None)
+    feat_q_pool, _ = netF_s(feat_q, n_patch, sample_ids)
+
+    total_nce_loss = 0.0
+    for f_q, f_k, crit, nce_layer in zip(feat_q_pool, feat_k_pool, criterionNCE, nce_layers):
+        loss = crit(f_q, f_k) * lambda_NCE_s
+        total_nce_loss += loss.mean()
+
+    return total_nce_loss / n_layers
