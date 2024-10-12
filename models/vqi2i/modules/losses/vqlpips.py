@@ -27,7 +27,7 @@ class VQLPipsWithDiscriminator(nn.Module):
         self.pixel_weight = pixel_loss_weight
         self.perceptual_loss = VGG19(init_weights=init_weights, feature_mode=True).eval()
         self.perceptual_weight = perceptual_weight
-        self.discriminator = NLayerDiscriminator(input_nc=disc_in_channels, ndf=disc_ndf, n_layers=disc_num_layers, use_actnorm=use_actnorm)
+        self.discriminator = NLayerDiscriminator(input_nc=disc_in_channels*2 if disc_conditional else disc_in_channels, ndf=disc_ndf, n_layers=disc_num_layers, use_actnorm=use_actnorm)
         
         if disc_loss == "hinge":
             self.disc_loss = hinge_d_loss
