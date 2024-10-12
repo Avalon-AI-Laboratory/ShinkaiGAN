@@ -5,8 +5,8 @@ from torch.autograd import Variable
 
 from models.vqi2i.modules.encoders.network import *
 from models.vqi2i.modules.vqvae.quantize import VectorQuantizer
-# from models.vqi2i.modules.discriminators.model import NLayerDiscriminator
-# from models.vqi2i.modules.losses.vqperceptual import hinge_d_loss
+from models.vqi2i.modules.losses.vqlpips import VQLPipsWithDiscriminator
+from models.vqi2i.modules.encoders.network import StyleMixingFFN
 
 class VQI2I_AdaIN(nn.Module):
     def __init__(self,
@@ -33,6 +33,8 @@ class VQI2I_AdaIN(nn.Module):
         
         super(VQI2I_AdaIN, self).__init__()
         self.image_key = image_key
+        self.loss_a = VQLPipsWithDiscriminator(perceptual_weight=0)
+        self.loss_b = VQLPipsWithDiscriminator(perceptual_weight=0)
 
         self.style_enc_a = StyleEncoder(in_channels=in_channels, 
                                         hidden_dimensions=intermediate_channels, 
@@ -88,7 +90,8 @@ class VQI2I_AdaIN(nn.Module):
                                  style_dim=style_dim, 
                                  double_z=double_z)
         
-        self.style_mixer_mlp = nn.Linear(in_features=style_dim*2, out_features=style_dim)
+        # self.style_mixer_mlp = nn.Linear(in_features=style_dim*2, out_features=style_dim)
+        self.style_mixer_mlp = StyleMixingFFN(style_dim*2, style_dim)
         self.style_mixer_normalization = nn.LayerNorm(style_dim)
 
     def encode(self, x, label, img_ref=None, style_mix=False):
@@ -109,10 +112,14 @@ class VQI2I_AdaIN(nn.Module):
         return quant_c, emb_loss, info, style_vector
     
     def style_mix(self, style_a, style_b):
+        if len(style_a.shape) > 2:
+            style_a = style_a.squeeze(-2, -1)
+        if len(style_b.shape) > 2:
+            style_b = style_b.squeeze(-2, -1)
         style_vector = torch.cat([style_a, style_b], dim=1)
         style_vector = self.style_mixer_mlp(style_vector)
         style_vector = self.style_mixer_normalization(style_vector)
-        return style_vector
+        return style_vector.unsqueeze(-1).unsqueeze(-1)
 
     def encode_style(self, x, label):
         if label == 1:
