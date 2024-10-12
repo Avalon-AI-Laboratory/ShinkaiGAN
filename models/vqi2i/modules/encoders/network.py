@@ -12,6 +12,35 @@ def nonlinearity(x):
 def Normalize(in_channels):
     return torch.nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
 
+class StyleMixingFFN(nn.Module):
+    def __init__(self, in_dim, out_dim, dropout=0.2):
+        super(StyleMixingFFN, self).__init__()
+        self.fc1 = nn.Linear(in_dim, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, out_dim)
+
+        self.act = nn.ReLU()
+
+        self.dropout = nn.Dropout(dropout)
+
+        self.bn1 = nn.BatchNorm1d(512)
+        self.bn2 = nn.BatchNorm1d(256)
+    
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.bn1(x)
+        x = self.act(x)
+        x = self.dropout(x)
+
+        x = self.fc2(x)
+        x = self.bn2(x)
+        x = self.act(x)
+        x = self.dropout(x)
+
+        x = self.fc3(x)
+
+        return x
+
 class Downsample(nn.Module):
     def __init__(self, in_channels, with_conv):
         super(Downsample, self).__init__()
