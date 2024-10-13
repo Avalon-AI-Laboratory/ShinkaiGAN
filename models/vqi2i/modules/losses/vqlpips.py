@@ -101,3 +101,4 @@ class VQLPipsWithDiscriminator(nn.Module):
                    }
 
             return d_loss, log
+        
