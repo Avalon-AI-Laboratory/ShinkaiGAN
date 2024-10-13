@@ -50,3 +50,48 @@ class PatchHDCELoss(nn.Module):
         loss = loss_vec.mean() - 1 + CELoss_dummy.detach()
 
         return loss
+
+def calculate_HDCE_loss(src:torch.Tensor, 
+                       tgt:torch.Tensor, 
+                       weight,
+                       nce_layers:list, 
+                       netG:nn.Module, 
+                       netF:nn.Module, 
+                       n_patch:int = 256, 
+                       nce_includes_all_negatives_from_minibatch:bool = False,
+                       nce_temp:float = 0.07,
+                       lambda_HDCE:float = 0.1, 
+                       flip_equivariance:bool = False, 
+                       flipped_for_equivariance:bool = False,
+                       gen_type: str = "CUT",
+                       no_Hneg:str = True):
+    n_layers = len(nce_layers)
+    criterionHDCE = []
+
+    for i, nce_layer in enumerate(nce_layers):
+        criterionHDCE.append(PatchHDCELoss(nce_includes_all_negatives_from_minibatch, src.shape[0], nce_temp))
+
+    if gen_type == "CUT":
+        fake_B_feat = netG(tgt, nce_layers, encode_only=True)
+    else:
+        _, fake_B_feat = netG.content_enc(tgt, extract_feats=True, layers_extracted=nce_layers)
+
+    if flip_equivariance and flipped_for_equivariance:
+        fake_B_feat = [torch.flip(fq, [3]) for fq in fake_B_feat]
+
+    if gen_type == "CUT":
+        real_A_feat = netG(src, nce_layers, encode_only=True)
+    else:
+        _, real_A_feat = netG.content_enc(src, extract_feats=True, layers_extracted=nce_layers)
+    
+    feat_q_pool, sample_ids = netF(fake_B_feat, n_patch, None)
+    feat_k_pool, _ = netF(real_A_feat, n_patch, sample_ids)
+
+    total_HDCE_loss = 0.0
+    for f_q, f_k, crit, nce_layer, w in zip(feat_q_pool, feat_k_pool, criterionHDCE, nce_layers, weight):
+        if no_Hneg:
+            w = None
+        loss = crit(f_q, f_k, w) * lambda_HDCE
+        total_HDCE_loss += loss.mean()
+
+    return total_HDCE_loss / n_layers
