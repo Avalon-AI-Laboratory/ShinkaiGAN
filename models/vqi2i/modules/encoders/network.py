@@ -247,7 +247,7 @@ class ContentEncoder(nn.Module):
         self.norm_out = Normalize(block_in)
         self.conv_out = nn.Conv2d(block_in, 2 * z_channels if double_z else z_channels, kernel_size=3, stride=1, padding=1)
     
-    def forward(self, x, temb=None):
+    def forward(self, x, temb=None, extract_feats=False, layers_extracted=None):
         feats = [self.conv_in(x)]
 
         for i_level in range(self.num_resolutions):
@@ -270,6 +270,18 @@ class ContentEncoder(nn.Module):
         feature = nonlinearity(feature)
         feature = self.conv_out(feature)
 
+        if layers_extracted is not None and extract_feats:
+            feats_temp = []
+            if len(layers_extracted) == 0:
+                feats_temp = feats
+
+            else:
+                for i in layers_extracted:
+                    feats_temp.append(feats[i])
+                feats = feats_temp
+
+            return feature, feats
+        
         return feature
 
 class Decoder(nn.Module):
