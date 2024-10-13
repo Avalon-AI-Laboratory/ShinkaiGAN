@@ -1,4 +1,3 @@
-#### WARNING: THIS CODE STILL IN PROGRESS! ####
 import numpy as np
 from PIL import Image
 import torch
@@ -11,6 +10,7 @@ import random
 
 from models.vqi2i.vqgan_model.vqi2i_adain import VQI2ICrossGAN_AdaIN
 from models.vqi2i.modules.discriminators.nlayers_disc import NLayerDiscriminator
+from models.vqi2i.modules.losses.patchNCE import calculate_NCE_loss
 
 def kl_divergence_loss(s_yr, s_y, s_r, beta=0.2):
     s_yr_dist = F.softmax(s_yr, dim=-1)
