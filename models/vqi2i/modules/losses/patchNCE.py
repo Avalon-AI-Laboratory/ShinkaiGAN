@@ -31,10 +31,10 @@ class PatchNCELoss(nn.Module):
         feat_q = feat_q.view(batch_dim_for_bmm, -1, dim)
         feat_k = feat_k.view(batch_dim_for_bmm, -1, dim)
         n_patches = feat_q.size(1)
-        l_neg_curbatch = torch.bmm(feat_q, feat_k.permute(0, 2, 1))
+        l_neg_curbatch = torch.bmm(feat_q, feat_k.transpose(2, 1))
 
         if weight is not None:
-            l_neg_curbatch = l_neg_curbatch * weight
+            l_neg_curbatch *= weight
         
         diag = torch.eye(n_patches, dtype=self.mask_dtype, device=feat_q.device)[None, :, :]
         l_neg_curbatch = l_neg_curbatch.masked_fill(diag, -10.0)
@@ -52,13 +52,13 @@ def calculate_NCE_loss(src:torch.Tensor,
                        nce_layers:list, 
                        netG:nn.Module, 
                        netF_s:nn.Module, 
-                       criterionNCE:list, 
                        n_patch:int = 256, 
                        nce_includes_all_negatives_from_minibatch:bool = False,
                        nce_temp:float = 0.07,
                        lambda_NCE_s:float = 0.1, 
                        flip_equivariance:bool = False, 
-                       flipped_for_equivariance:bool = False):
+                       flipped_for_equivariance:bool = False,
+                       gen_type: str = "CUT"):
     """
     The code borrows heavily from the PyTorch implementation of CUT
     https://github.com/taesungp/contrastive-unpaired-translation
@@ -67,14 +67,21 @@ def calculate_NCE_loss(src:torch.Tensor,
     criterionNCE = []
 
     for i, nce_layer in enumerate(nce_layers):
-        criterionNCE.append(PatchNCELoss(nce_includes_all_negatives_from_minibatch, n_patch, nce_temp).cuda())
+        criterionNCE.append(PatchNCELoss(nce_includes_all_negatives_from_minibatch, src.shape[0], nce_temp).cuda())
 
-    feat_q = netG(tgt, nce_layers, encode_only=True)
+    if gen_type == "CUT":
+        feat_q = netG(tgt, nce_layers, encode_only=True)
+    else:
+        _, feat_q = netG.content_enc(tgt, extract_feats=True, layers_extracted=nce_layers)
 
     if flip_equivariance and flipped_for_equivariance:
         feat_q = [torch.flip(fq, [3]) for fq in feat_q]
 
-    feat_k = netG(src, nce_layers, encode_only=True)
+    if gen_type == "CUT":
+        feat_k = netG(src, nce_layers, encode_only=True)
+    else:
+        _, feat_k = netG.content_enc(src, extract_feats=True, layers_extracted=nce_layers)
+    
     feat_k_pool, sample_ids = netF_s(feat_k, n_patch, None)
     feat_q_pool, _ = netF_s(feat_q, n_patch, sample_ids)
 
