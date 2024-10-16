@@ -23,8 +23,8 @@ class StyleMixingFFN(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-        self.bn1 = nn.BatchNorm1d(512)
-        self.bn2 = nn.BatchNorm1d(256)
+        self.bn1 = nn.LayerNorm(512)
+        self.bn2 = nn.LayerNorm(256)
     
     def forward(self, x):
         x = self.fc1(x)
