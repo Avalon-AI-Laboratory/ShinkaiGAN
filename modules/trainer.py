@@ -62,11 +62,13 @@ class Trainer:
             self.gen.loss_c.discriminator.parameters(),
             lr=1e-4, betas=((0.5, 0.999))
         )
-
-        self.optimizer_F = torch.optim.Adam(
-            self.F.parameters(),
-            lr=1e-4, betas=((0.5, 0.999))
-        )
+        try:
+            self.optimizer_F = torch.optim.Adam(
+                self.F.parameters(),
+                lr=1e-4, betas=((0.5, 0.999))
+            )
+        except:
+            self.optimizer_F = None
 
         self.scheduler = scheduler
         self.epoch_start = epoch_start
@@ -85,9 +87,9 @@ class Trainer:
                 self.optimizer_Du.zero_grad()
 
                 # Dapatkan data
-                x_p, y_p, x, y = next(iter(self.train_loader))
+                x_p, y_p, x, y = next(iter(self.train_loader)).values()
                 x_p, y_p, x, y = x_p.to(self.device), y_p.to(self.device), x.to(self.device), y.to(self.device)
-                x_p, y_p, x, y = x_p.unsqueeze(0), y_p.unsqueeze(0), x.unsqueeze(0), y.unsqueeze(0)
+                # x_p, y_p, x, y = x_p.unsqueeze(0), y_p.unsqueeze(0), x.unsqueeze(0), y.unsqueeze(0)
                 
                 # ========== SUPERVISED TRAINING BRANCH ==========
                 # Latih Diskriminator Dp1
@@ -201,9 +203,13 @@ class Trainer:
 
                 loss.backward()
                 self.optimizer_AE.step()
+                if self.optimizer_F == None:
+                    self.optimizer_F = torch.optim.Adam(
+                        self.F.parameters(),
+                        lr=1e-4, betas=((0.5, 0.999))
+                    )
                 self.optimizer_F.step()
 
                 if i % 100 == 0:
                     print(f"Epoch [{epoch}/{self.epoch_end}], Iteration [{i}/{self.iterations}], Loss: {loss.item()}")
-                    print(f"Loss supervised: {l_supervised.item()}, Loss unsupervised: {l_unsupervised.item()}")
                     print(f"Loss supervised: {l_supervised.item()}, Loss unsupervised: {l_unsupervised.item()}")
