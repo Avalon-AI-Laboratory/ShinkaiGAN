@@ -68,19 +68,26 @@ def calculate_NCE_loss(src:torch.Tensor,
 
     for i, nce_layer in enumerate(nce_layers):
         criterionNCE.append(PatchNCELoss(nce_includes_all_negatives_from_minibatch, src.shape[0], nce_temp).cuda())
+        
+    with torch.no_grad():
+        netG = netG.to("cpu")
+        if gen_type == "CUT":
+            feat_q = netG(tgt.cpu(), nce_layers, encode_only=True)
+        else:
+            _, feat_q = netG.content_enc(tgt.cpu(), extract_feats=True, layers_extracted=nce_layers)
+    
+        if flip_equivariance and flipped_for_equivariance:
+            feat_q = [torch.flip(fq, [3]) for fq in feat_q]
+    
+        if gen_type == "CUT":
+            feat_k = netG(src.cpu(), nce_layers, encode_only=True)
+        else:
+            _, feat_k = netG.content_enc(src.cpu(), extract_feats=True, layers_extracted=nce_layers)
 
-    if gen_type == "CUT":
-        feat_q = netG(tgt, nce_layers, encode_only=True)
-    else:
-        _, feat_q = netG.content_enc(tgt, extract_feats=True, layers_extracted=nce_layers)
-
-    if flip_equivariance and flipped_for_equivariance:
-        feat_q = [torch.flip(fq, [3]) for fq in feat_q]
-
-    if gen_type == "CUT":
-        feat_k = netG(src, nce_layers, encode_only=True)
-    else:
-        _, feat_k = netG.content_enc(src, extract_feats=True, layers_extracted=nce_layers)
+    for i in range(len(feat_k)):
+        feat_k[i] = feat_k[i].to("cuda")
+        feat_q[i] = feat_q[i].to("cuda")
+    netG = netG.to("cuda")
     
     feat_k_pool, sample_ids = netF_s(feat_k, n_patch, None)
     feat_q_pool, _ = netF_s(feat_q, n_patch, sample_ids)
