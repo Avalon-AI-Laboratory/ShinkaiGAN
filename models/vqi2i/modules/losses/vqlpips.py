@@ -71,8 +71,11 @@ class VQLPipsWithDiscriminator(nn.Module):
             g_loss = -torch.mean(logits_fake) # Pake wasserstein GAN
 
             d_weight = torch.tensor(1.0)
-
-            logits_fake = self.discriminator(reconstructions.contiguous())
+            if cond is None:
+                logits_fake = self.discriminator(reconstructions.contiguous())
+            else:
+                logits_fake = self.discriminator(torch.cat((reconstructions.contiguous(), cond), dim=1))
+                
             g_rec_loss = -torch.mean(logits_fake)
 
             loss = 5*nll_loss + switch_weight * (1.0*g_loss + 0.2*g_rec_loss) + self.codebook_weight * codebook_loss.mean()
@@ -101,4 +104,3 @@ class VQLPipsWithDiscriminator(nn.Module):
                    }
 
             return d_loss, log
-        
