@@ -70,20 +70,26 @@ def calculate_HDCE_loss(src:torch.Tensor,
 
     for i, nce_layer in enumerate(nce_layers):
         criterionHDCE.append(PatchHDCELoss(nce_includes_all_negatives_from_minibatch, src.shape[0], nce_temp))
-
-    if gen_type == "CUT":
-        fake_B_feat = netG(tgt, nce_layers, encode_only=True)
-    else:
-        _, fake_B_feat = netG.content_enc(tgt, extract_feats=True, layers_extracted=nce_layers)
-
-    if flip_equivariance and flipped_for_equivariance:
-        fake_B_feat = [torch.flip(fq, [3]) for fq in fake_B_feat]
-
-    if gen_type == "CUT":
-        real_A_feat = netG(src, nce_layers, encode_only=True)
-    else:
-        _, real_A_feat = netG.content_enc(src, extract_feats=True, layers_extracted=nce_layers)
+    with torch.no_grad():
+        netG = netG.to("cpu")
+        if gen_type == "CUT":
+            fake_B_feat = netG(tgt.cpu(), nce_layers, encode_only=True)
+        else:
+            _, fake_B_feat = netG.content_enc(tgt.cpu(), extract_feats=True, layers_extracted=nce_layers)
     
+        if flip_equivariance and flipped_for_equivariance:
+            fake_B_feat = [torch.flip(fq, [3]) for fq in fake_B_feat]
+    
+        if gen_type == "CUT":
+            real_A_feat = netG(src.cpu(), nce_layers, encode_only=True)
+        else:
+            _, real_A_feat = netG.content_enc(src.cpu(), extract_feats=True, layers_extracted=nce_layers)
+
+    for i in range(len(fake_B_feat)):
+        fake_B_feat[i] = fake_B_feat[i].to("cuda")
+        real_A_feat[i] = real_A_feat[i].to("cuda")
+        
+    netG = netG.to("cuda")
     feat_q_pool, sample_ids = netF(fake_B_feat, n_patch, None)
     feat_k_pool, _ = netF(real_A_feat, n_patch, sample_ids)
 
