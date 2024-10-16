@@ -80,16 +80,13 @@ class Trainer:
         for epoch in range(self.epoch_start, self.epoch_end):
             lambda_sup = torch.cos(torch.tensor((torch.pi*(epoch - 1)/(self.epoch_end*2)))).to(self.device)
             for i in range(self.iterations):
+                torch.cuda.synchronize()
                 self.gen.train()
                 self.F.train()
-                self.optimizer_AE.zero_grad()
-                self.optimizer_Dp_2.zero_grad()
-                self.optimizer_Du.zero_grad()
 
                 # Dapatkan data
                 x_p, y_p, x, y = next(iter(self.train_loader)).values()
                 x_p, y_p, x, y = x_p.to(self.device), y_p.to(self.device), x.to(self.device), y.to(self.device)
-                # x_p, y_p, x, y = x_p.unsqueeze(0), y_p.unsqueeze(0), x.unsqueeze(0), y.unsqueeze(0)
                 
                 # ========== SUPERVISED TRAINING BRANCH ==========
                 # Latih Diskriminator Dp1
@@ -177,7 +174,7 @@ class Trainer:
                 cross_recons_loss_b = torch.mean(torch.abs(y_p.detach() - fake_yp)).to("cuda")
                 cross_recons_loss = 0.5 * (cross_recons_loss_a + cross_recons_loss_b)
 
-                nce_loss = calculate_NCE_loss(y_p, fake_yp, [0,4,9,12,14], self.gen, self.F, gen_type="ShinkaiGAN")
+                nce_loss = calculate_NCE_loss(y_p, fake_yp, [0,4,9,12], self.gen, self.F, gen_type="ShinkaiGAN")
                 
                 l_supervised = ae_lossA + ae_lossB + 0.5*(style_loss + content_loss) + 0.001*cross_recons_loss + style_mix_loss + 0.3*nce_loss
 
@@ -192,9 +189,10 @@ class Trainer:
                 s_x = self.gen.encode_style(x, label=1)
                 L_sP = torch.mean(torch.abs(s_x_fake.detach() - s_x)).to(self.device)
 
-                l_src, weight = calculate_R_loss(x, fake_y, [0,4,9,12,14], self.gen, self.F, self.n_patches, 0.05, epoch=epoch, gen_type="ShinkaiGAN")
-
-                l_hdce = calculate_HDCE_loss(x, fake_y, weight, [0,4,9,12,14], self.gen, self.F, gen_type="ShinkaiGAN")
+                l_src, weight = calculate_R_loss(x, fake_y, [0,4,9,12], self.gen, self.F, self.n_patches, 0.05, epoch=epoch, gen_type="ShinkaiGAN")
+                for item in weight:
+                    item = item.detach()
+                l_hdce = calculate_HDCE_loss(x, fake_y, weight, [0,4,9,12], self.gen, self.F, gen_type="ShinkaiGAN")
 
                 l_unsupervised = ae_lossC + L_cP + L_sP + 0.5*(l_src + l_hdce) + 0.1*idt_loss
 
@@ -209,7 +207,8 @@ class Trainer:
                         lr=1e-4, betas=((0.5, 0.999))
                     )
                 self.optimizer_F.step()
-
+                
+                torch.cuda.empty_cache()
                 if i % 1 == 0:
                     print(f"Epoch [{epoch}/{self.epoch_end}], Iteration [{i}/{self.iterations}], Loss: {loss.item()}")
                     print(f"Loss supervised: {l_supervised.item()}, Loss unsupervised: {l_unsupervised.item()}")
