@@ -97,20 +97,25 @@ def calculate_R_loss(src:torch.Tensor,
                                      n_epochs_decay=n_epochs_decay,
                                      step_gamma=True,
                                      step_gamma_epoch=200).to("cuda"))
-
-    if gen_type == "CUT":
-        fake_B_feat = net_G(tgt, nce_layers, encode_only=True)
-    else:
-        _, fake_B_feat = net_G.content_enc(tgt, extract_feats=True, layers_extracted=nce_layers)
-
-    if flip_equivariance and flipped_for_equivariance:
-        fake_B_feat = [torch.flip(fq, [3]) for fq in fake_B_feat]
-
-    if gen_type == "CUT":
-        real_A_feat = net_G(src, nce_layers, encode_only=True)
-    else:
-        _, real_A_feat = net_G.content_enc(src, extract_feats=True, layers_extracted=nce_layers)
+    with torch.no_grad():
+        net_G = net_G.to("cpu")
+        if gen_type == "CUT":
+            fake_B_feat = net_G(tgt.cpu(), nce_layers, encode_only=True)
+        else:
+            _, fake_B_feat = net_G.content_enc(tgt.cpu(), extract_feats=True, layers_extracted=nce_layers)
     
+        if flip_equivariance and flipped_for_equivariance:
+            fake_B_feat = [torch.flip(fq, [3]) for fq in fake_B_feat]
+    
+        if gen_type == "CUT":
+            real_A_feat = net_G(src.cpu(), nce_layers, encode_only=True)
+        else:
+            _, real_A_feat = net_G.content_enc(src.cpu(), extract_feats=True, layers_extracted=nce_layers)
+
+    for i in range(len(fake_B_feat)):
+        fake_B_feat[i] = fake_B_feat[i].to("cuda")
+        real_A_feat[i] = real_A_feat[i].to("cuda")
+    net_G = net_G.to("cuda")
     fake_B_pool, sample_ids = netF(fake_B_feat, n_patch, None)
     real_A_pool, _ = netF(real_A_feat, n_patch, sample_ids)
 
