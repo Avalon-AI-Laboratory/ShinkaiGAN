@@ -210,6 +210,6 @@ class Trainer:
                     )
                 self.optimizer_F.step()
 
-                if i % 100 == 0:
+                if i % 1 == 0:
                     print(f"Epoch [{epoch}/{self.epoch_end}], Iteration [{i}/{self.iterations}], Loss: {loss.item()}")
                     print(f"Loss supervised: {l_supervised.item()}, Loss unsupervised: {l_unsupervised.item()}")
