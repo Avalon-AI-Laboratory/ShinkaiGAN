@@ -83,5 +83,4 @@ class myDataset(Dataset):
         return {"X_p": X_p, "Y_p": Y_p, "X": X, "Y": Y}
 
     def __len__(self):
-        print("This only returns the number of paired data. To see the detail of each data count, implement .get_len_data()")
         return len(self.paired_data_xp)
