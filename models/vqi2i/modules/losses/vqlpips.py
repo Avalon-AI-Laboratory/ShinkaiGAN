@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from models.vqi2i.modules.lpips.vgg import VGG19
 from models.vqi2i.modules.discriminators.nlayers_disc import NLayerDiscriminator
 
+# Loss functions for VQLPIPS with Discriminator (VQLPipsWithDiscriminator)
 def hinge_d_loss(logits_real, logits_fake):
     loss_real = torch.mean(F.relu(1. - logits_real))
     loss_fake = torch.mean(F.relu(1. + logits_fake))
@@ -29,6 +30,7 @@ class VQLPipsWithDiscriminator(nn.Module):
         self.perceptual_weight = perceptual_weight
         self.discriminator = NLayerDiscriminator(input_nc=disc_in_channels*2 if disc_conditional else disc_in_channels, ndf=disc_ndf, n_layers=disc_num_layers, use_actnorm=use_actnorm)
         
+        # Discriminator loss, default is hinge loss
         if disc_loss == "hinge":
             self.disc_loss = hinge_d_loss
         else:
@@ -38,11 +40,13 @@ class VQLPipsWithDiscriminator(nn.Module):
         self.disc_weight = disc_weight
         self.disc_conditional = disc_conditional
     
-    def forward(self, codebook_loss, inputs, reconstructions, optimizer_idx, fake=None, # optimizer_idx = 0 untuk GAN, sedangkan optimizer_idx = 1 untuk diskriminator
+    # Forward pass for VQLPipsWithDiscriminator
+    def forward(self, codebook_loss, inputs, reconstructions, optimizer_idx, fake=None, # optimizer_idx = 0 untuk Generator, sedangkan optimizer_idx = 1 untuk diskriminator
                 last_layer=None, cond=None, split="train",
                 switch_weight=0.1): 
         rec_loss = torch.abs(inputs.contiguous() - reconstructions.contiguous())
-
+        
+        # Calculate perceptual loss, if perceptual_weight > 0
         if self.perceptual_weight > 0:
             p_loss = self.perceptual_loss(inputs.contiguous(), reconstructions.contiguous())
             rec_loss = rec_loss + self.perceptual_weight * p_loss
@@ -53,6 +57,7 @@ class VQLPipsWithDiscriminator(nn.Module):
         nll_loss = rec_loss
         nll_loss = torch.mean(nll_loss)
 
+        # If optimizer_idx = 0, then it's the generator
         if optimizer_idx == 0:
             if cond is None:
                 assert not self.disc_conditional
@@ -89,6 +94,7 @@ class VQLPipsWithDiscriminator(nn.Module):
             
             return loss, log
 
+        # If optimizer_idx = 1, then it's the discriminator
         if optimizer_idx == 1:
             if cond is None:
                 logits_real = self.discriminator(inputs.contiguous().detach())
