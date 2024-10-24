@@ -21,8 +21,8 @@ def calculate_supervised_loss(gen, F, x_p, y_p, fake_xp, fake_yp, fake_yp_mixed,
 
     # Style losses
     style_loss_xp = torch.mean(torch.abs(s_xp.detach() - s_xp_fake))
-    style_loss_yp = torch.mean(torch.abs(s_yp.detach() - s_y_fake))
-    style_loss_xyr = torch.mean(torch.abs(s_yr.detach() - s_y_r_fake))
+    style_loss_yp = torch.mean(torch.abs(s_yp.detach() - s_y_fake)) # bagian ini perlu diperbaiki
+    style_loss_xyr = torch.mean(torch.abs(s_yr.detach() - s_y_r_fake)) # bagian ini perlu juga diperbaiki
     style_loss = 0.3 * (style_loss_xp + style_loss_yp + style_loss_xyr)
 
     # Style mixing loss
@@ -33,7 +33,7 @@ def calculate_supervised_loss(gen, F, x_p, y_p, fake_xp, fake_yp, fake_yp_mixed,
 
     # Content losses
     c_xp, c_xp_quantized = gen.encode_content(x_p)
-    c_yp, c_yp_quantized = gen.encode_content(fake_yp)
+    c_yp, c_yp_quantized = gen.encode_content(fake_yp) #salah
     content_loss = torch.mean(torch.abs(c_xp.detach() - c_yp))
     content_quantized_loss = torch.mean(torch.abs(c_xp_quantized.detach() - c_yp_quantized))
     content_loss = 0.5 * (content_loss + content_quantized_loss)

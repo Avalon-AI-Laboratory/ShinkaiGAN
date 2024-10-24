@@ -1,7 +1,10 @@
 import torch
+import os
 from modules.modular.supervised import calculate_supervised_loss
 from modules.modular.unsupervised import calculate_unsupervised_loss
 from modules.modular.total_loss import calculate_total_loss
+from modules.modular.validation import Validator
+from modules.modular.testing import Tester
 
 class Trainer:
     def __init__(self,
@@ -11,17 +14,28 @@ class Trainer:
                  device,
                  train_loader,
                  val_loader,
+                 test_loader,  # Added test_loader
                  scheduler,
                  epoch_start,
                  epoch_end,
                  n_patches=256,
-                 iterations=60000):
+                 iterations=60000,
+                 test_frequency=10):  # Added test_frequency parameter
         self.gen = gen
         self.F = F
         self.save_dir = save_dir
         self.device = device
         self.train_loader = train_loader
         self.val_loader = val_loader
+        self.test_loader = test_loader  # Store test_loader
+        self.scheduler = scheduler
+        self.epoch_start = epoch_start
+        self.epoch_end = epoch_end
+        self.n_patches = n_patches
+        self.iterations = iterations
+        self.test_frequency = test_frequency
+
+        # Initialize optimizers
         self.optimizer_AE = torch.optim.Adam(
             list(self.gen.content_enc.parameters()) + \
             list(self.gen.style_enc_a.parameters()) + \
@@ -56,13 +70,10 @@ class Trainer:
         except:
             self.optimizer_F = None
 
-        self.scheduler = scheduler
-        self.epoch_start = epoch_start
-        self.epoch_end = epoch_end
-        self.n_patches = n_patches
-        self.iterations = iterations
-    
-    
+        # Initialize validator and tester
+        self.validator = Validator(gen, F, device, val_loader, save_dir)
+        self.tester = Tester(gen, F, device, test_loader, save_dir)
+
     def train_discriminators(self, x_p, y_p, x, y):
         """Train all discriminator networks"""
         # Train Discriminator Dp1
@@ -116,7 +127,45 @@ class Trainer:
         return fake_xp, fake_yp, fake_yp_mixed, fake_y, rec_xp, rec_yp, rec_y, \
                qloss_xp, qloss_yp, qloss_y, s_xp, s_yp, s_yr, s_r
 
+    def save_checkpoint(self, epoch, iteration, metrics=None):
+        """Save model checkpoint with additional testing metrics"""
+        checkpoint_path = os.path.join(self.save_dir, f'checkpoint_epoch_{epoch}.pth')
+        checkpoint = {
+            'epoch': epoch,
+            'iteration': iteration,
+            'generator_state_dict': self.gen.state_dict(),
+            'feature_extractor_state_dict': self.F.state_dict(),
+            'optimizer_AE_state_dict': self.optimizer_AE.state_dict(),
+            'optimizer_F_state_dict': self.optimizer_F.state_dict() if self.optimizer_F else None,
+            'optimizer_Dp_1_state_dict': self.optimizer_Dp_1.state_dict(),
+            'optimizer_Dp_2_state_dict': self.optimizer_Dp_2.state_dict(),
+            'optimizer_Du_state_dict': self.optimizer_Du.state_dict(),
+        }
+        
+        # Include test metrics if available
+        if metrics is not None:
+            checkpoint['test_metrics'] = metrics
+            
+        torch.save(checkpoint, checkpoint_path)
+        print(f"Checkpoint saved: {checkpoint_path}")
+
+    def load_checkpoint(self, checkpoint_path):
+        """Load model checkpoint"""
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        
+        self.gen.load_state_dict(checkpoint['generator_state_dict'])
+        self.F.load_state_dict(checkpoint['feature_extractor_state_dict'])
+        self.optimizer_AE.load_state_dict(checkpoint['optimizer_AE_state_dict'])
+        if checkpoint['optimizer_F_state_dict'] is not None:
+            self.optimizer_F.load_state_dict(checkpoint['optimizer_F_state_dict'])
+        self.optimizer_Dp_1.load_state_dict(checkpoint['optimizer_Dp_1_state_dict'])
+        self.optimizer_Dp_2.load_state_dict(checkpoint['optimizer_Dp_2_state_dict'])
+        self.optimizer_Du.load_state_dict(checkpoint['optimizer_Du_state_dict'])
+        
+        return checkpoint['epoch'], checkpoint['iteration']
+
     def train(self):
+        """Main training loop with integrated testing"""
         for epoch in range(self.epoch_start, self.epoch_end):
             lambda_sup = torch.cos(torch.tensor((torch.pi*(epoch - 1)/(self.epoch_end*2)))).to(self.device)
             
@@ -162,6 +211,18 @@ class Trainer:
                     )
                 self.optimizer_F.step()
                 
+                # Validate every 30 iterations
+                if i % 30 == 0:
+                    self.validator.validate(
+                        epoch, i,
+                        save_model=False,
+                        optimizer_AE=self.optimizer_AE,
+                        optimizer_F=self.optimizer_F,
+                        optimizer_Dp_1=self.optimizer_Dp_1,
+                        optimizer_Dp_2=self.optimizer_Dp_2,
+                        optimizer_Du=self.optimizer_Du
+                    )
+                
                 torch.cuda.empty_cache()
                 if i % 1 == 0:
                     print(f"Epoch [{epoch}/{self.epoch_end}], "
@@ -169,3 +230,32 @@ class Trainer:
                           f"Loss: {loss.item()}")
                     print(f"Loss supervised: {l_supervised.item()}, "
                           f"Loss unsupervised: {l_unsupervised.item()}")
+            
+            # Run testing and save checkpoint every test_frequency epochs
+            if (epoch + 1) % self.test_frequency == 0:
+                print(f"\nRunning test evaluation at epoch {epoch + 1}...")
+                test_metrics = self.tester.test()
+                
+                # Save checkpoint with test metrics
+                self.save_checkpoint(epoch, i, test_metrics)
+                
+                # Print test metrics
+                print("\nTest Metrics:")
+                for domain, metrics in test_metrics.items():
+                    print(f"\n{domain}:")
+                    for metric, value in metrics.items():
+                        print(f"{metric}: {value:.4f}")
+            
+            # Save regular checkpoint for other epochs
+            elif (epoch + 1) % 10 == 0:
+                self.save_checkpoint(epoch, i)
+
+    def evaluate(self, checkpoint_path=None):
+        """Run evaluation on test set"""
+        if checkpoint_path is not None:
+            self.load_checkpoint(checkpoint_path)
+        
+        print("Running full evaluation on test set...")
+        test_metrics = self.tester.test()
+        
+        return test_metrics
