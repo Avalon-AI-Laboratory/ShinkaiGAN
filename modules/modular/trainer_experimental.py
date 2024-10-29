@@ -1,9 +1,10 @@
 import torch
 import os
+from datetime import datetime
+from torchvision.utils import save_image
 from modules.modular.supervised import calculate_supervised_loss
 from modules.modular.unsupervised import calculate_unsupervised_loss
 from modules.modular.total_loss import calculate_total_loss
-from modules.modular.validation import Validator
 from modules.modular.testing import Tester
 
 class Trainer:
@@ -70,10 +71,6 @@ class Trainer:
         except:
             self.optimizer_F = None
 
-        # Initialize validator and tester
-        self.validator = Validator(gen, F, device, val_loader, save_dir)
-        self.tester = Tester(gen, F, device, test_loader, save_dir)
-
     def train_discriminators(self, x_p, y_p, x, y):
         """Train all discriminator networks"""
         # Train Discriminator Dp1
@@ -126,6 +123,118 @@ class Trainer:
 
         return fake_xp, fake_yp, fake_yp_mixed, fake_y, rec_xp, rec_yp, rec_y, \
                qloss_xp, qloss_yp, qloss_y, s_xp, s_yp, s_yr, s_r
+    
+    def generate_validation_images(self, x_p, y_p, x, y):
+        """Generate images for validation visualization"""
+        self.gen.eval()
+        with torch.no_grad():
+            # Generate supervised translations
+            s_xp = self.gen.encode_style(x_p, label=1)
+            s_yp = self.gen.encode_style(y_p, label=0)
+            s_r = self.gen.encode_style(y, label=-1)
+            s_yr = self.gen.style_mix(s_yp, s_r)
+            
+            fake_xp, _, _ = self.gen(y_p, label=0, cross=True, s_given=s_xp)
+            fake_yp, _, _ = self.gen(x_p, label=1, cross=True, s_given=s_yp)
+            fake_yp_mixed, _, _ = self.gen(x_p, label=1, cross=True, s_given=s_yr)
+            
+            # Generate unsupervised translations
+            fake_y, _, _ = self.gen(x, label=1, cross=True, s_given=s_r)
+            
+            # Generate reconstructions
+            rec_xp, _, _ = self.gen(x_p, label=1, cross=False)
+            rec_yp, _, _ = self.gen(y_p, label=0, cross=False)
+            rec_y, _, _ = self.gen(y, label=-1, cross=False)
+
+        return {
+            'supervised': {
+                'x_p': x_p, 'y_p': y_p,
+                'fake_xp': fake_xp, 'fake_yp': fake_yp,
+                'fake_yp_mixed': fake_yp_mixed,
+                'rec_xp': rec_xp, 'rec_yp': rec_yp
+            },
+            'unsupervised': {
+                'x': x, 'y': y,
+                'fake_y': fake_y,
+                'rec_y': rec_y
+            }
+        }
+
+    def save_validation_images(self, images, epoch, iteration):
+        """Save validation image grids"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f'epoch_{epoch}_iter_{iteration}_{timestamp}'
+        
+        # Create supervised grid
+        supervised_grid = torch.cat([
+            images['supervised']['x_p'],
+            images['supervised']['y_p'],
+            images['supervised']['fake_xp'],
+            images['supervised']['fake_yp'],
+            images['supervised']['fake_yp_mixed'],
+            images['supervised']['rec_xp'],
+            images['supervised']['rec_yp']
+        ], dim=0)
+        
+        # Create unsupervised grid
+        unsupervised_grid = torch.cat([
+            images['unsupervised']['x'],
+            images['unsupervised']['y'],
+            images['unsupervised']['fake_y'],
+            images['unsupervised']['rec_y']
+        ], dim=0)
+        
+        # Save grids
+        save_image(
+            supervised_grid,
+            os.path.join(self.image_dir, f'{filename}_supervised.png'),
+            nrow=images['supervised']['x_p'].size(0),
+            normalize=True
+        )
+        
+        save_image(
+            unsupervised_grid,
+            os.path.join(self.image_dir, f'{filename}_unsupervised.png'),
+            nrow=images['unsupervised']['x'].size(0),
+            normalize=True
+        )
+
+    def validate(self, epoch, iteration):
+        """Run validation step"""
+        # Get validation batch
+        val_batch = next(iter(self.val_loader))
+        x_p, y_p, x, y = val_batch.values()
+        x_p, y_p = x_p.to(self.device), y_p.to(self.device)
+        x, y = x.to(self.device), y.to(self.device)
+
+        # Generate and save validation images
+        val_images = self.generate_validation_images(x_p, y_p, x, y)
+        self.save_validation_images(val_images, epoch, iteration)
+
+        # Calculate validation losses
+        with torch.no_grad():
+            lambda_sup = torch.cos(torch.tensor((torch.pi*(epoch - 1)/(self.epoch_end*2)))).to(self.device)
+            
+            l_supervised = calculate_supervised_loss(
+                self.gen, self.F, x_p, y_p, 
+                val_images['supervised']['fake_xp'],
+                val_images['supervised']['fake_yp'],
+                val_images['supervised']['fake_yp_mixed'],
+                val_images['supervised']['rec_xp'],
+                val_images['supervised']['rec_yp'],
+                None, None, None, None, None, None  # Style and qloss values not needed for validation
+            )
+
+            l_unsupervised = calculate_unsupervised_loss(
+                self.gen, self.F, x, y,
+                val_images['unsupervised']['fake_y'],
+                val_images['unsupervised']['rec_y'],
+                None, self.n_patches, epoch
+            )
+
+            total_loss = calculate_total_loss(l_supervised, l_unsupervised, lambda_sup)
+
+        return l_supervised.item(), l_unsupervised.item(), total_loss.item()
 
     def save_checkpoint(self, epoch, iteration, metrics=None):
         """Save model checkpoint with additional testing metrics"""
@@ -259,3 +368,4 @@ class Trainer:
         test_metrics = self.tester.test()
         
         return test_metrics
+    
