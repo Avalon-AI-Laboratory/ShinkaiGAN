@@ -5,7 +5,6 @@ from torchvision.utils import save_image
 from modules.modular.supervised import calculate_supervised_loss
 from modules.modular.unsupervised import calculate_unsupervised_loss
 from modules.modular.total_loss import calculate_total_loss
-# from modules.modular.testing import Tester
 
 class Trainer:
     def __init__(self,
@@ -14,29 +13,40 @@ class Trainer:
                  save_dir,
                  device,
                  train_loader,
-                 val_loader,
-                 test_loader,  # Added test_loader
-                 scheduler,
-                 epoch_start,
-                 epoch_end,
+                 val_loader=None,
+                 test_loader=None,
+                 scheduler=None,
+                 epoch_start=1,
+                 epoch_end=20,
                  n_patches=256,
                  iterations=60000,
-                 test_frequency=10):  # Added test_frequency parameter
+                 test_frequency=10,
+                 validation_frequency=30):
         self.gen = gen
         self.F = F
         self.save_dir = save_dir
         self.device = device
         self.train_loader = train_loader
         self.val_loader = val_loader
-        self.test_loader = test_loader  # Store test_loader
+        self.test_loader = test_loader
         self.scheduler = scheduler
         self.epoch_start = epoch_start
         self.epoch_end = epoch_end
         self.n_patches = n_patches
         self.iterations = iterations
         self.test_frequency = test_frequency
+        self.validation_frequency = validation_frequency
+        
+        # Create directories if they don't exist
+        self.image_dir = os.path.join(save_dir, 'images')
+        os.makedirs(self.image_dir, exist_ok=True)
+        os.makedirs(os.path.join(save_dir, 'checkpoints'), exist_ok=True)
 
         # Initialize optimizers
+        self._initialize_optimizers()
+        
+    def _initialize_optimizers(self):
+        """Initialize all optimizers with proper parameters"""
         self.optimizer_AE = torch.optim.Adam(
             list(self.gen.content_enc.parameters()) + \
             list(self.gen.style_enc_a.parameters()) + \
@@ -48,38 +58,40 @@ class Trainer:
             list(self.gen.decoder_a.parameters()) + \
             list(self.gen.decoder_b.parameters()) + \
             list(self.gen.style_mixer_mlp.parameters()),
-            lr=1e-4, betas=((0.5, 0.999))
+            lr=1e-4, betas=(0.5, 0.999)
         )
 
         self.optimizer_Dp_1 = torch.optim.Adam(
             self.gen.loss_a.discriminator.parameters(),
-            lr=1e-4, betas=((0.5, 0.999))
+            lr=1e-4, betas=(0.5, 0.999)
         )
         self.optimizer_Dp_2 = torch.optim.Adam(
             self.gen.loss_b.discriminator.parameters(),
-            lr=1e-4, betas=((0.5, 0.999))
+            lr=1e-4, betas=(0.5, 0.999)
         )
         self.optimizer_Du = torch.optim.Adam(
             self.gen.loss_c.discriminator.parameters(),
-            lr=1e-4, betas=((0.5, 0.999))
+            lr=1e-4, betas=(0.5, 0.999)
         )
         try:
             self.optimizer_F = torch.optim.Adam(
                 self.F.parameters(),
-                lr=1e-4, betas=((0.5, 0.999))
+                lr=1e-4, betas=(0.5, 0.999)
             )
         except:
             self.optimizer_F = None
 
     def train_discriminators(self, x_p, y_p, x, y):
         """Train all discriminator networks"""
+        self.gen.train()
+        
         # Train Discriminator Dp1
         self.optimizer_Dp_1.zero_grad()
         s_xp = self.gen.encode_style(x_p, label=1)
         fake_xp, _, _ = self.gen(y_p, label=0, cross=True, s_given=s_xp)
         rec_xp, qloss_xp, _ = self.gen(x_p, label=1, cross=False)
         
-        y2x_loss, log = self.gen.loss_a(_, x_p, fake_xp, cond=x_p, optimizer_idx=1, 
+        y2x_loss, _ = self.gen.loss_a(_, x_p, fake_xp, cond=x_p, optimizer_idx=1, 
                                      last_layer=None, split="train")
         xp_rec_d_loss, _ = self.gen.loss_a(_, x_p, rec_xp, cond=x_p, optimizer_idx=1, 
                                           last_layer=None, split="train")
@@ -98,7 +110,7 @@ class Trainer:
         fake_yp, _, _ = self.gen(x_p, label=1, cross=True, s_given=s_yp)
         rec_yp, qloss_yp, _ = self.gen(y_p, label=0, cross=False)
         
-        x2y_loss, log = self.gen.loss_b(_, y_p, fake_yp_mixed, cond=y_p, 
+        x2y_loss, _ = self.gen.loss_b(_, y_p, fake_yp_mixed, cond=y_p, 
                                      optimizer_idx=1, last_layer=None, split="train")
         yp_rec_d_loss, _ = self.gen.loss_b(_, y_p, rec_yp, cond=y_p, 
                                           optimizer_idx=1, last_layer=None, split="train")
@@ -112,7 +124,7 @@ class Trainer:
         fake_y, _, _ = self.gen(x, label=1, cross=True, s_given=s_r)
         rec_y, qloss_y, _ = self.gen(y, label=1, cross=True, s_given=s_r)
         
-        x2r_loss, log = self.gen.loss_c(_, y, fake_y, optimizer_idx=1, 
+        x2r_loss, _ = self.gen.loss_c(_, y, fake_y, optimizer_idx=1, 
                                      last_layer=None, split="train")
         y_rec_d_loss, _ = self.gen.loss_c(_, y, rec_y, optimizer_idx=1, 
                                          last_layer=None, split="train")
@@ -200,41 +212,50 @@ class Trainer:
         )
 
     def validate(self, epoch, iteration):
-        """Run validation step"""
-        # Get validation batch
-        val_batch = next(iter(self.val_loader))
-        x_p, y_p, x, y = val_batch.values()
-        x_p, y_p = x_p.to(self.device), y_p.to(self.device)
-        x, y = x.to(self.device), y.to(self.device)
-
-        # Generate and save validation images
-        val_images = self.generate_validation_images(x_p, y_p, x, y)
-        self.save_validation_images(val_images, epoch, iteration)
-
-        # Calculate validation losses
-        with torch.no_grad():
-            lambda_sup = torch.cos(torch.tensor((torch.pi*(epoch - 1)/(self.epoch_end*2)))).to(self.device)
+        """Run validation step if validation loader is available"""
+        if self.val_loader is None:
+            return None, None, None
             
-            l_supervised = calculate_supervised_loss(
-                self.gen, self.F, x_p, y_p, 
-                val_images['supervised']['fake_xp'],
-                val_images['supervised']['fake_yp'],
-                val_images['supervised']['fake_yp_mixed'],
-                val_images['supervised']['rec_xp'],
-                val_images['supervised']['rec_yp'],
-                None, None, None, None, None, None  # Style and qloss values not needed for validation
-            )
+        try:
+            # Get validation batch
+            val_batch = next(iter(self.val_loader))
+            x_p, y_p, x, y = val_batch.values()
+            x_p, y_p = x_p.to(self.device), y_p.to(self.device)
+            x, y = x.to(self.device), y.to(self.device)
 
-            l_unsupervised = calculate_unsupervised_loss(
-                self.gen, self.F, x, y,
-                val_images['unsupervised']['fake_y'],
-                val_images['unsupervised']['rec_y'],
-                None, self.n_patches, epoch
-            )
+            # Generate validation images and calculate losses
+            val_images = self.generate_validation_images(x_p, y_p, x, y)
+            if iteration % 100 == 0:  # Save images less frequently
+                self.save_validation_images(val_images, epoch, iteration)
 
-            total_loss = calculate_total_loss(l_supervised, l_unsupervised, lambda_sup)
+            # Calculate validation losses
+            with torch.no_grad():
+                lambda_sup = torch.cos(torch.tensor((torch.pi*(epoch - 1)/(self.epoch_end*2)))).to(self.device)
+                
+                l_supervised = calculate_supervised_loss(
+                    self.gen, self.F, x_p, y_p, 
+                    val_images['supervised']['fake_xp'],
+                    val_images['supervised']['fake_yp'],
+                    val_images['supervised']['fake_yp_mixed'],
+                    val_images['supervised']['rec_xp'],
+                    val_images['supervised']['rec_yp'],
+                    None, None, None, None, None, None
+                )
 
-        return l_supervised.item(), l_unsupervised.item(), total_loss.item()
+                l_unsupervised = calculate_unsupervised_loss(
+                    self.gen, self.F, x, y,
+                    val_images['unsupervised']['fake_y'],
+                    val_images['unsupervised']['rec_y'],
+                    None, self.n_patches, epoch
+                )
+
+                total_loss = calculate_total_loss(l_supervised, l_unsupervised, lambda_sup)
+
+            return l_supervised.item(), l_unsupervised.item(), total_loss.item()
+            
+        except Exception as e:
+            print(f"Validation error: {str(e)}")
+            return None, None, None
 
     def save_checkpoint(self, epoch, iteration, metrics=None):
         """Save model checkpoint with additional testing metrics"""
@@ -274,98 +295,71 @@ class Trainer:
         return checkpoint['epoch'], checkpoint['iteration']
 
     def train(self):
-        """Main training loop with integrated testing"""
+        """Main training loop with optional validation and testing"""
         for epoch in range(self.epoch_start, self.epoch_end):
             lambda_sup = torch.cos(torch.tensor((torch.pi*(epoch - 1)/(self.epoch_end*2)))).to(self.device)
             
             for i in range(self.iterations):
-                torch.cuda.synchronize()
-                self.gen.train()
-                self.F.train()
-
-                # Get data
-                x_p, y_p, x, y = next(iter(self.train_loader)).values()
-                x_p, y_p, x, y = x_p.to(self.device), y_p.to(self.device), \
-                                x.to(self.device), y.to(self.device)
-                
-                # Train discriminators and get generated images
-                fake_xp, fake_yp, fake_yp_mixed, fake_y, rec_xp, rec_yp, rec_y, \
-                qloss_xp, qloss_yp, qloss_y, s_xp, s_yp, s_yr, s_r = \
-                    self.train_discriminators(x_p, y_p, x, y)
-
-                # Train Autoencoder
-                self.optimizer_AE.zero_grad()
-
-                # Calculate supervised and unsupervised losses
-                l_supervised = calculate_supervised_loss(
-                    self.gen, self.F, x_p, y_p, fake_xp, fake_yp, fake_yp_mixed,
-                    rec_xp, rec_yp, s_xp, s_yp, s_yr, s_r, qloss_xp, qloss_yp
-                )
-
-                l_unsupervised = calculate_unsupervised_loss(
-                    self.gen, self.F, x, y, fake_y, rec_y, qloss_y,
-                    self.n_patches, epoch
-                )
-
-                # Calculate total loss
-                loss = calculate_total_loss(l_supervised, l_unsupervised, lambda_sup)
-
-                loss.backward()
-                self.optimizer_AE.step()
-                
-                if self.optimizer_F is None:
-                    self.optimizer_F = torch.optim.Adam(
-                        self.F.parameters(),
-                        lr=1e-4, betas=(0.5, 0.999)
-                    )
-                self.optimizer_F.step()
-                
-                # Validate every 30 iterations
-                if i % 30 == 0:
-                    self.validator.validate(
-                        epoch, i,
-                        save_model=False,
-                        optimizer_AE=self.optimizer_AE,
-                        optimizer_F=self.optimizer_F,
-                        optimizer_Dp_1=self.optimizer_Dp_1,
-                        optimizer_Dp_2=self.optimizer_Dp_2,
-                        optimizer_Du=self.optimizer_Du
-                    )
-                
-                torch.cuda.empty_cache()
-                if i % 1 == 0:
-                    print(f"Epoch [{epoch}/{self.epoch_end}], "
-                          f"Iteration [{i}/{self.iterations}], "
-                          f"Loss: {loss.item()}")
-                    print(f"Loss supervised: {l_supervised.item()}, "
-                          f"Loss unsupervised: {l_unsupervised.item()}")
-            
-            # Run testing and save checkpoint every test_frequency epochs
-            # if (epoch + 1) % self.test_frequency == 0:
-            #     print(f"\nRunning test evaluation at epoch {epoch + 1}...")
-            #     test_metrics = self.tester.test()
-                
-            #     # Save checkpoint with test metrics
-            #     self.save_checkpoint(epoch, i, test_metrics)
-                
-            #     # Print test metrics
-            #     print("\nTest Metrics:")
-            #     for domain, metrics in test_metrics.items():
-            #         print(f"\n{domain}:")
-            #         for metric, value in metrics.items():
-            #             print(f"{metric}: {value:.4f}")
-            
-            # # Save regular checkpoint for other epochs
-            # elif (epoch + 1) % 10 == 0:
-            #     self.save_checkpoint(epoch, i)
-
-    # def evaluate(self, checkpoint_path=None):
-    #     """Run evaluation on test set"""
-    #     if checkpoint_path is not None:
-    #         self.load_checkpoint(checkpoint_path)
+                try:
+                    # Get training data
+                    batch = next(iter(self.train_loader))
+                    x_p, y_p, x, y = batch.values()
+                    x_p, y_p = x_p.to(self.device), y_p.to(self.device)
+                    x, y = x.to(self.device), y.to(self.device)
+                    
+                    # Train discriminators and get generated images
+                    outputs = self.train_discriminators(x_p, y_p, x, y)
+                    fake_xp, fake_yp, fake_yp_mixed, fake_y, rec_xp, rec_yp, rec_y, \
+                    qloss_xp, qloss_yp, qloss_y, s_xp, s_yp, s_yr, s_r = outputs
         
-    #     print("Running full evaluation on test set...")
-    #     test_metrics = self.tester.test()
+                    # Train Autoencoder
+                    self.optimizer_AE.zero_grad()
         
-    #     return test_metrics
-    
+                    # Calculate losses
+                    l_supervised = calculate_supervised_loss(
+                        self.gen, self.F, x_p, y_p, fake_xp, fake_yp, fake_yp_mixed,
+                        rec_xp, rec_yp, s_xp, s_yp, s_yr, s_r, qloss_xp, qloss_yp
+                    )
+        
+                    l_unsupervised = calculate_unsupervised_loss(
+                        self.gen, self.F, x, y, fake_y, rec_y, qloss_y,
+                        self.n_patches, epoch
+                    )
+        
+                    loss = calculate_total_loss(l_supervised, l_unsupervised, lambda_sup)
+        
+                    loss.backward()
+                    self.optimizer_AE.step()
+                    
+                    if self.optimizer_F is not None:
+                        self.optimizer_F.step()
+                    
+                    # Run validation if available
+                    if i % self.validation_frequency == 0:
+                        val_results = self.validate(epoch, i)
+                        if all(v is not None for v in val_results):
+                            val_supervised, val_unsupervised, val_total = val_results
+                            print(f"\nValidation Losses - Supervised: {val_supervised:.4f}, "
+                                  f"Unsupervised: {val_unsupervised:.4f}, "
+                                  f"Total: {val_total:.4f}")
+                    
+                    # Print training progress
+                    if i % 1 == 0:
+                        print(f"Epoch [{epoch}/{self.epoch_end}], "
+                              f"Iteration [{i}/{self.iterations}], "
+                              f"Loss: {loss.item():.4f}")
+                        print(f"Loss supervised: {l_supervised.item():.4f}, "
+                              f"Loss unsupervised: {l_unsupervised.item():.4f}")
+                    
+                    torch.cuda.empty_cache()
+                    
+                except Exception as e:
+                    print(f"Error during training iteration: {str(e)}")
+                    continue
+            
+            # Save checkpoint
+            if (epoch + 1) % self.test_frequency == 0:
+                self.save_checkpoint(epoch, i)
+            
+            if self.scheduler is not None:
+                self.scheduler.step()
