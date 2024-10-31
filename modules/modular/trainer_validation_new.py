@@ -19,9 +19,9 @@ class Trainer:
                  epoch_start=1,
                  epoch_end=20,
                  n_patches=256,
-                 iterations=60000,
-                 test_frequency=10,
-                 validation_frequency=30):
+                 iterations=90,
+                 test_frequency=5,
+                 validation_frequency=10):
         self.gen = gen
         self.F = F
         self.save_dir = save_dir
@@ -225,7 +225,7 @@ class Trainer:
 
             # Generate validation images and calculate losses
             val_images = self.generate_validation_images(x_p, y_p, x, y)
-            if iteration % 100 == 0:  # Save images less frequently
+            if iteration % 10 == 0:  # Save images less frequently
                 self.save_validation_images(val_images, epoch, iteration)
 
             # Calculate validation losses
