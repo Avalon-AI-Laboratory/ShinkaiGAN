@@ -2,7 +2,7 @@ import torch
 import os
 from datetime import datetime
 from torchvision.utils import save_image
-from modules.modular.supervised import calculate_supervised_loss
+from modules.modular.supervised import calculate_supervised_loss, calculate_supervised_loss_val
 from modules.modular.unsupervised import calculate_unsupervised_loss
 from modules.modular.total_loss import calculate_total_loss
 
@@ -154,21 +154,24 @@ class Trainer:
             fake_y, _, _ = self.gen(x, label=1, cross=True, s_given=s_r)
             
             # Generate reconstructions
-            rec_xp, _, _ = self.gen(x_p, label=1, cross=False)
-            rec_yp, _, _ = self.gen(y_p, label=0, cross=False)
-            rec_y, _, _ = self.gen(y, label=-1, cross=False)
+            rec_xp, qloss_xp, _ = self.gen(x_p, label=1, cross=False)
+            rec_yp, qloss_yp, _ = self.gen(y_p, label=0, cross=False)
+            rec_y, qloss_y, _ = self.gen(y, label=-1, cross=False)
 
         return {
             'supervised': {
                 'x_p': x_p, 'y_p': y_p,
                 'fake_xp': fake_xp, 'fake_yp': fake_yp,
                 'fake_yp_mixed': fake_yp_mixed,
-                'rec_xp': rec_xp, 'rec_yp': rec_yp
+                'rec_xp': rec_xp, 'rec_yp': rec_yp, 
+                's_xp':s_xp, 's_yp':s_yp, 's_yr':s_yr, 's_r':s_r,
+                'qloss_xp':qloss_xp, 'qloss_yp':qloss_yp
             },
             'unsupervised': {
                 'x': x, 'y': y,
                 'fake_y': fake_y,
-                'rec_y': rec_y
+                'rec_y': rec_y, 
+                'qloss_y':qloss_y
             }
         }
 
@@ -231,22 +234,31 @@ class Trainer:
             # Calculate validation losses
             with torch.no_grad():
                 lambda_sup = torch.cos(torch.tensor((torch.pi*(epoch - 1)/(self.epoch_end*2)))).to(self.device)
-                
-                l_supervised = calculate_supervised_loss(
+
+                print("val supervised calculating")
+               # print("Validation Images Structure:", val_images)
+                l_supervised = calculate_supervised_loss_val(
                     self.gen, self.F, x_p, y_p, 
                     val_images['supervised']['fake_xp'],
                     val_images['supervised']['fake_yp'],
                     val_images['supervised']['fake_yp_mixed'],
                     val_images['supervised']['rec_xp'],
                     val_images['supervised']['rec_yp'],
-                    None, None, None, None, None, None
+                    # val_images['supervised']['s_xp'],
+                    # val_images['supervised']['s_yp'],
+                    # val_images['supervised']['s_yr'],
+                   #  val_images['supervised']['s_r'],
+                    val_images['supervised']['qloss_xp'],
+                    val_images['supervised']['qloss_yp'],
+                    # None, None, None, None, None, None
                 )
-
+                print("val unsupervised calculating")
                 l_unsupervised = calculate_unsupervised_loss(
                     self.gen, self.F, x, y,
                     val_images['unsupervised']['fake_y'],
                     val_images['unsupervised']['rec_y'],
-                    None, self.n_patches, epoch
+                    val_images['unsupervised']['qloss_y'],
+                    self.n_patches, epoch
                 )
 
                 total_loss = calculate_total_loss(l_supervised, l_unsupervised, lambda_sup)
@@ -350,6 +362,7 @@ class Trainer:
                               f"Loss: {loss.item():.4f}")
                         print(f"Loss supervised: {l_supervised.item():.4f}, "
                               f"Loss unsupervised: {l_unsupervised.item():.4f}")
+                        print("==================================================")
                     
                     torch.cuda.empty_cache()
                     
