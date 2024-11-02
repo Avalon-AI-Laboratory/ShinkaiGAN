@@ -2,7 +2,7 @@ import torch
 import os
 from datetime import datetime
 from torchvision.utils import save_image
-from modules.modular.supervised import calculate_supervised_loss, calculate_supervised_loss_val
+from modules.modular.supervised import calculate_supervised_loss
 from modules.modular.unsupervised import calculate_unsupervised_loss
 from modules.modular.total_loss import calculate_total_loss
 
@@ -237,20 +237,19 @@ class Trainer:
 
                 print("val supervised calculating")
                # print("Validation Images Structure:", val_images)
-                l_supervised = calculate_supervised_loss_val(
+                l_supervised = calculate_supervised_loss(
                     self.gen, self.F, x_p, y_p, 
                     val_images['supervised']['fake_xp'],
                     val_images['supervised']['fake_yp'],
                     val_images['supervised']['fake_yp_mixed'],
                     val_images['supervised']['rec_xp'],
                     val_images['supervised']['rec_yp'],
-                    # val_images['supervised']['s_xp'],
-                    # val_images['supervised']['s_yp'],
-                    # val_images['supervised']['s_yr'],
-                   #  val_images['supervised']['s_r'],
+                    val_images['supervised']['s_xp'],
+                    val_images['supervised']['s_yp'],
+                    val_images['supervised']['s_yr'],
+                    val_images['supervised']['s_r'],
                     val_images['supervised']['qloss_xp'],
                     val_images['supervised']['qloss_yp'],
-                    # None, None, None, None, None, None
                 )
                 print("val unsupervised calculating")
                 l_unsupervised = calculate_unsupervised_loss(

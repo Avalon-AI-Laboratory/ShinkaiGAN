@@ -55,19 +55,3 @@ def calculate_supervised_loss(gen, F, x_p, y_p, fake_xp, fake_yp, fake_yp_mixed,
 
     return total_loss
 
-# In supervised.py
-def calculate_supervised_loss_val(gen, F, x_p, y_p, fake_xp, fake_yp, fake_yp_mixed, rec_xp, rec_yp, qloss_xp, qloss_yp):
-    # Calculate AE losses
-    ae_lossA, _ = gen.loss_a(qloss_xp, x_p, rec_xp, fake=fake_xp, cond=x_p, 
-                            switch_weight=0.1, optimizer_idx=0, 
-                            last_layer=gen.get_last_layer(label=1), split="val")
-    
-    ae_lossB, _ = gen.loss_b(qloss_yp, y_p, rec_yp, fake=fake_yp_mixed, cond=y_p, 
-                            switch_weight=0.1, optimizer_idx=0, 
-                            last_layer=gen.get_last_layer(label=0), split="val")
-
-    
-    # Total loss computation
-    total_loss = (ae_lossA + ae_lossB)  # Include the necessary components
-    return total_loss
-
