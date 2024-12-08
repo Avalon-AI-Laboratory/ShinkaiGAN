@@ -5,15 +5,14 @@ import { Form } from "@/components/primitive/form";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
-import Image from "next/image";
 
 export default function Home() {
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [ratings, setRatings] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false); // Loading state
+  const [currentIndex, setCurrentIndex] = useState(0); // Track current card index
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
-  // Fetch random images from the server on component mount
   useEffect(() => {
     const fetchImages = async () => {
       try {
@@ -24,10 +23,8 @@ export default function Home() {
         }
 
         const images = await response.json();
-        console.log("Fetched images:", images); // Debugging log
-
         setImageUrls(images);
-        setRatings(Array(images.length).fill("1")); // Initialize ratings array based on image length
+        setRatings(Array(images.length).fill("1"));
       } catch (error) {
         console.error("Error fetching images:", error);
       }
@@ -36,20 +33,31 @@ export default function Home() {
     fetchImages();
   }, []);
 
-  // Function to handle the rating change for each image
   const handleRatingChange = (index: number, rating: string) => {
     const updatedRatings = [...ratings];
     updatedRatings[index] = rating;
     setRatings(updatedRatings);
   };
+  
 
-  // Function to handle the submission of the form
+  const handleNext = () => {
+    if (currentIndex < imageUrls.length - 1) {
+      setCurrentIndex((prev) => prev + 1);
+    }
+  };
+
+  const handlePrevious = () => {
+    if (currentIndex > 0) {
+      setCurrentIndex((prev) => prev - 1);
+    }
+  };
+
   const handleFinish = async () => {
-    setLoading(true); // Start loading
+    setLoading(true);
     const formData = imageUrls.map((url, index) => {
-      const parts = url.split("/"); // Split the URL to extract filename and directory
-      const filename = parts[parts.length - 1]; // Get the last part as filename
-      const directory = parts[parts.length - 2]; // Get the second last part as directory
+      const parts = url.split("/");
+      const filename = parts[parts.length - 1];
+      const directory = parts[parts.length - 2];
 
       return {
         filename,
@@ -68,27 +76,18 @@ export default function Home() {
         body: JSON.stringify(formData),
       });
 
-      const content = await response.json();
-
       if (response.ok) {
         toast({
           className: "bg-primary text-white",
-          variant: "default",
           title: "Data Submitted",
           description: "Your data has been successfully sent!",
-          duration: 5000,
         });
-
-        // Refresh the page after submission
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000); // Delay page reload to show toast
+        setTimeout(() => window.location.reload(), 2000);
       } else {
         toast({
           className: "bg-red-600 text-white",
           title: "Submission Error",
-          description: `Error: ${content.error}`,
-          duration: 5000,
+          description: "An error occurred during submission.",
           action: <ToastAction altText="Retry">Retry</ToastAction>,
         });
       }
@@ -98,53 +97,46 @@ export default function Home() {
         className: "bg-red-600 text-white",
         title: "Network Error",
         description: "An error occurred while submitting your data.",
-        duration: 5000,
         action: <ToastAction altText="Retry">Retry</ToastAction>,
       });
     } finally {
-      setLoading(false); // Stop loading
+      setLoading(false);
     }
   };
 
-  // Use useEffect to simulate button press every 5 seconds
-  // useEffect(() => {
-  //   const intervalId = setInterval(() => {
-  //     handleFinish(); // Trigger handleFinish every 5 seconds
-  //   }, 5000);
-
-  //   return () => clearInterval(intervalId); // Clean up on component unmount
-  // }, [imageUrls, ratings]); // Depend on imageUrls and ratings to make sure form data is ready
-
   return (
-    <div className="flex min-h-screen flex-col pb-12 pt-12">
-      <div className="mb-8 w-full">
-        <h2 className="text-center text-xl font-semibold">
-          Your score will help us with our research!
-        </h2>
-        {/* <Image src="/images/cartoongan/5.jpg" alt="banner" width={512} height={512} /> */}
-      </div>
-      <div className="flex min-h-screen flex-wrap justify-center gap-8">
-        {imageUrls.map((src, index) => (
-          <div
-            key={index}
-            className="transform transition-transform duration-200 hover:scale-105"
-          >
-            <Form
-              src={src}
-              index={index}
-              rating={ratings[index]}
-              onRatingChange={handleRatingChange}
-            />
+    <div className="flex min-h-screen flex-col items-center justify-center">
+      {imageUrls.length > 0 && (
+        <div className="w-full min-h-screen flex flex-col items-center justify-center">
+          <Form
+            src={imageUrls[currentIndex]}
+            index={currentIndex}
+            rating={ratings[currentIndex]}
+            onRatingChange={(index, rating) => handleRatingChange(index, rating)}
+          />
+
+          <div className="flex mt-4 space-x-4">
+            <Button onClick={handlePrevious} disabled={currentIndex === 0}>
+              Previous
+            </Button>
+            <Button
+              onClick={handleNext}
+              disabled={currentIndex === imageUrls.length - 1}
+            >
+              Next
+            </Button>
           </div>
-        ))}
-      </div>
-      <Button
-        onClick={handleFinish}
-        className="mx-auto mt-8 w-full max-w-xs"
-        disabled={loading}
-      >
-        {loading ? <div className="spinner"></div> : "Finish"}
-      </Button>
+          {currentIndex === imageUrls.length - 1 && (
+            <Button
+              onClick={handleFinish}
+              className="mt-4"
+              disabled={loading}
+            >
+              {loading ? "Submitting..." : "Finish"}
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
