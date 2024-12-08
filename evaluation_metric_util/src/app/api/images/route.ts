@@ -15,13 +15,13 @@ export async function GET() {
     const animeganImages = getImagesFromDirectory("animegan");
     const cartoonganImages = getImagesFromDirectory("cartoongan");
     const scenemifyImages = getImagesFromDirectory("scenemify");
-    const shinkaiganImages = getImagesFromDirectory("shinkaigan");
+    const nijiganImages = getImagesFromDirectory("nijigan");
 
     const allImages = [
       ...animeganImages,
       ...cartoonganImages,
       ...scenemifyImages,
-      ...shinkaiganImages,
+      ...nijiganImages,
     ];
 
     // Shuffle and return 10 random images

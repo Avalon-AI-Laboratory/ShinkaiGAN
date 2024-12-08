@@ -39,8 +39,8 @@ export const Form = ({ src, index, rating, onRatingChange }: FormProps) => {
             <Image
               src={src}
               alt={`Sample Image ${index + 1}`}
-              width={300}
-              height={200}
+              width={512}
+              height={512}
               className="object-cover"
             />
           </div>
