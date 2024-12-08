@@ -11,6 +11,7 @@ export default function Home() {
   const [ratings, setRatings] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0); // Track current card index
   const [loading, setLoading] = useState(false);
+  const [isFinished, setIsFinished] = useState(false); // Track if submission is completed
   const { toast } = useToast();
 
   useEffect(() => {
@@ -38,7 +39,6 @@ export default function Home() {
     updatedRatings[index] = rating;
     setRatings(updatedRatings);
   };
-  
 
   const handleNext = () => {
     if (currentIndex < imageUrls.length - 1) {
@@ -79,10 +79,13 @@ export default function Home() {
       if (response.ok) {
         toast({
           className: "bg-primary text-white",
-          title: "Data Submitted",
-          description: "Your data has been successfully sent!",
+          title: "Data Submitted! This window will reload in a moment.",
+          description: "Your data has been successfully sent! You're all done!",
         });
-        setTimeout(() => window.location.reload(), 2000);
+        setIsFinished(true); // Mark as finished after successful submission
+
+        // Reload the page after a delay to allow toast display
+        setTimeout(() => window.location.reload(), 4000);
       } else {
         toast({
           className: "bg-red-600 text-white",
@@ -107,15 +110,17 @@ export default function Home() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center">
       {imageUrls.length > 0 && (
-        <div className="w-full min-h-screen flex flex-col items-center justify-center">
+        <div className="flex min-h-screen w-full flex-col items-center justify-center">
           <Form
             src={imageUrls[currentIndex]}
             index={currentIndex}
             rating={ratings[currentIndex]}
-            onRatingChange={(index, rating) => handleRatingChange(index, rating)}
+            onRatingChange={(index, rating) =>
+              handleRatingChange(index, rating)
+            }
           />
 
-          <div className="flex mt-4 space-x-4">
+          <div className="mt-4 flex space-x-4">
             <Button onClick={handlePrevious} disabled={currentIndex === 0}>
               Previous
             </Button>
@@ -130,9 +135,9 @@ export default function Home() {
             <Button
               onClick={handleFinish}
               className="mt-4"
-              disabled={loading}
+              disabled={loading || isFinished} // Disable when loading or finished
             >
-              {loading ? "Submitting..." : "Finish"}
+              {loading ? "Submitting..." : isFinished ? "Finished" : "Finish"}
             </Button>
           )}
         </div>
