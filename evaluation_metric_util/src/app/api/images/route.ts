@@ -85,7 +85,11 @@ export async function GET() {
     const selectedImages = shuffledImages.slice(0, 10);
 
     // Respon dengan array gambar yang telah dipilih
-    return NextResponse.json(selectedImages);
+    return NextResponse.json(selectedImages, {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+      },
+    });
   } catch (error) {
     console.error("Error fetching images:", error);
     return NextResponse.json(
