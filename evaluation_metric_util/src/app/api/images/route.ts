@@ -40,6 +40,8 @@
 //   }
 // }
 
+export const fetchCache = "force-no-store";
+
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
@@ -87,7 +89,7 @@ export async function GET() {
     // Respon dengan array gambar yang telah dipilih
     return NextResponse.json(selectedImages, {
       headers: {
-        "Cache-Control": "no-store, max-age=0",
+        "Cache-Control": "no-store",
       },
     });
   } catch (error) {
