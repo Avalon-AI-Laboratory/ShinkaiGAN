@@ -40,7 +40,7 @@
 //   }
 // }
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import fs from "fs";
@@ -48,7 +48,7 @@ import path from "path";
 
 export async function GET() {
   try {
-    const baseDir = path.resolve("./public/images");
+    const baseDir = path.resolve("./src/images");
 
     // Fungsi untuk mengambil gambar dari direktori tertentu
     const getImagesFromDirectory = (directory: string): string[] => {
