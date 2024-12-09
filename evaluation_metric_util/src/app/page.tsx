@@ -19,7 +19,7 @@ export default function Home() {
   useEffect(() => {
     const fetchImages = async () => {
       try {
-        const response = await fetch(`/api/images?ts=${Date.now()}`, {
+        const response = await fetch(`/api/images`, {
           next: { revalidate: 0 },
         });
 
