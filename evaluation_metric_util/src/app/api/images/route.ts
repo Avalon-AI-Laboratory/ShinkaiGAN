@@ -48,7 +48,7 @@ import path from "path";
 
 export async function GET() {
   try {
-    const baseDir = path.resolve("./src/images");
+    const baseDir = path.resolve("./public/images");
 
     // Fungsi untuk mengambil gambar dari direktori tertentu
     const getImagesFromDirectory = (directory: string): string[] => {
