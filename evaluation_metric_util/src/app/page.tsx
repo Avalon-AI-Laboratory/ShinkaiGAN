@@ -1,5 +1,7 @@
 "use client";
 
+export const fetchCache = "force-no-store";
+
 import { useState, useEffect } from "react";
 import { Form } from "@/components/primitive/form";
 import { Button } from "@/components/ui/button";
@@ -17,7 +19,7 @@ export default function Home() {
   useEffect(() => {
     const fetchImages = async () => {
       try {
-        const response = await fetch("/api/images");
+        const response = await fetch("/api/images", { cache: "no-store" });
 
         if (!response.ok) {
           throw new Error("Failed to fetch images");
