@@ -19,9 +19,7 @@ export default function Home() {
   useEffect(() => {
     const fetchImages = async () => {
       try {
-        const response = await fetch(`/api/images`, {
-          next: { revalidate: 0 },
-        });
+        const response = await fetch(`/api/images?ts=${Date.now()}`);
 
         if (!response.ok) {
           throw new Error("Failed to fetch images");
